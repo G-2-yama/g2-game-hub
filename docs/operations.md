@@ -4,7 +4,7 @@ title: 運用
 description: 初期設定、イベントの準備と後片付け、ランチャーのリリース、鍵とトークンの管理。
 tags: [operations, release, security]
 status: draft
-generated: { by: claude-code/claude-opus-5-5, at: 2026-11-14T10:30:00+09:00 }
+generated: { by: claude-code/claude-opus-5-5, at: 2026-11-14T12:00:00+09:00 }
 ---
 
 # 運用
@@ -36,7 +36,7 @@ cd ~ && ssh-keygen -t ed25519 -f content_deploy_key -N "" -C "g2-game-hub site b
    - Repository permissions：**Actions: Read and write のみ**
    - Device flow：有効にしない
    - インストール先：Only on this account
-2. Client ID を控え、`Generate a private key` で .pem を作る。
+2. Client ID（General のページ）を控え、`Credentials > Key pairs > New key` で .pem を作る（`Client secrets` は作らない）。
 3. `Install App` で **hubだけ**にインストールする。
 4. **data** → `Settings > Secrets and variables > Actions`
    - Variables `HUB_APP_CLIENT_ID`：Client ID
@@ -44,7 +44,9 @@ cd ~ && ssh-keygen -t ed25519 -f content_deploy_key -N "" -C "g2-game-hub site b
    - Secrets `HUB_APP_PRIVATE_KEY`：.pem の中身
 5. .pem を削除する。dataの Actions「Notify hub」を手動実行し、hubの「Deploy site」が動けば完了。
 
-### 4. トークンのポリシー
+### 4. トークンのポリシー（任意）
+
+なくても動くが、メンバーが加わる前に設定することをおすすめする（理由は [リポジトリの連携とCI](integration.md#任意の設定)）。
 
 Organization の `Settings > Personal access tokens`：Fine-grained は承認制、期限の上限は30日程度、Classic は禁止。
 
