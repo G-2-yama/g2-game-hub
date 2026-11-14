@@ -24,7 +24,7 @@ const { title = site.name, description = site.intro } = Astro.props;
     <title>{title}</title>
   </head>
   <body>
-    <Fragment set:html={renderHeader(site, ctx)} />
+    <Fragment set:html={renderHeader(site, ctx, '', content.events)} />
     <main id="main"><slot /></main>
     <Fragment set:html={renderFooter(site)} />
   </body>

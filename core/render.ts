@@ -25,10 +25,11 @@ const imageUrl = (ctx: RenderContext, slug: string, src: string) => (isExternal(
 const externalLink = (url: string, label: string, className: string) =>
   `<a class="${className}" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
 
-/** Markdown本文。生のHTMLは文字として表示し、リンクは http(s)・ページ内リンク、画像は相対パスか https のみ許可する。 */
+/** Markdown本文。改行はそのまま改行として扱う。生のHTMLは文字として表示し、リンクは http(s)・ページ内リンク、画像は相対パスか https のみ許可する。 */
 export function renderMarkdown(source: string, ctx: RenderContext, slug?: string) {
   const marked = new Marked({
     gfm: true,
+    breaks: true,
     renderer: {
       html: ({ text }) => esc(text),
       link({ href, title, tokens }) {
@@ -47,13 +48,18 @@ export function renderMarkdown(source: string, ctx: RenderContext, slug?: string
   return marked.parse(source, { async: false });
 }
 
-export function renderHeader(site: SiteConfig, ctx: RenderContext, extraNav = '') {
+/** イベントの一覧は右上のメニューに入れる（events を渡したときだけ）。 */
+export function renderHeader(site: SiteConfig, ctx: RenderContext, extraNav = '', events: GameEvent[] = []) {
   const link = site.links[0];
+  const eventMenu = events.length > 0 ? `<details class="menu">
+      <summary class="btn btn--text">イベント</summary>
+      <ul class="menu__list">${events.map((event) => `<li><a href="${esc(ctx.event(event.id))}">${esc(event.name)}</a></li>`).join('')}</ul>
+    </details>` : '';
   return `<a class="skip-link" href="#main">本文へ移動</a>
 <header class="top-app-bar">
   <div class="container">
-    <a class="top-app-bar__title" href="${esc(ctx.home())}" aria-label="${esc(site.name)}"><img src="${esc(ctx.icon)}" alt="" width="40" height="40" />お品書き</a>
-    <nav aria-label="メインナビゲーション">${extraNav}${link ? externalLink(link.url, link.label, 'btn btn--text') : ''}</nav>
+    <a class="top-app-bar__title" href="${esc(ctx.home())}" aria-label="${esc(site.name)}"><img src="${esc(ctx.icon)}" alt="" width="40" height="40" />${esc(site.name)}</a>
+    <nav aria-label="メインナビゲーション">${eventMenu}${extraNav}${link ? externalLink(link.url, link.label, 'btn btn--text') : ''}</nav>
   </div>
 </header>`;
 }
@@ -82,17 +88,13 @@ function renderGameGrid(games: Game[], ctx: RenderContext, eventId?: string) {
     : '<p class="body-large">公開中の作品はまだありません。</p>';
 }
 
-/** 全ゲームとイベントの一覧（サイトのトップページ）。 */
+/** 全ゲームの一覧（トップページ）。イベントはヘッダーのメニューから開く。 */
 export function renderHomePage(content: Content, ctx: RenderContext) {
-  const { site, games, events } = content;
+  const { site, games } = content;
   return `<section class="hero container">
   <h1 class="hero__title">${esc(site.name)}</h1>
   ${site.intro ? `<p class="body-large">${esc(site.intro)}</p>` : ''}
 </section>
-${events.length > 0 ? `<section class="section container" aria-labelledby="events-heading">
-  <h2 id="events-heading" class="headline">イベント</h2>
-  <ul class="list event-list">${events.map((event) => `<li><a href="${esc(ctx.event(event.id))}">${esc(event.name)}</a></li>`).join('')}</ul>
-</section>` : ''}
 <section id="games" class="section container" aria-labelledby="games-heading">
   <h2 id="games-heading" class="headline">ゲーム</h2>
   ${renderGameGrid(games, ctx)}

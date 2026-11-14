@@ -36,8 +36,8 @@ examples/                distribution.json の例（架空の値）
 | `parseContent(raw)` | site.yml・各md を読み、`{ site, games, events, errors }` を返す |
 | `findGame` / `findEvent` / `eventGames` | slug・id での検索、イベントの出展ゲーム |
 | `renderHomePage` / `renderEventPage` / `renderGamePage` | 各ページの本文 |
-| `renderHeader` / `renderFooter` | ヘッダー・フッター |
-| `renderMarkdown` | 本文の描画（生のHTMLは無効、リンクは http(s) のみ） |
+| `renderHeader` / `renderFooter` | ヘッダー（サイトではイベントのメニューつき）・フッター |
+| `renderMarkdown` | 本文の描画（改行はそのまま改行、生のHTMLは無効、リンクは http(s) のみ） |
 
 URL の作り方はサイトとランチャーで異なるため、`RenderContext`（`home`・`game`・`event`・`asset`・`icon`）で渡します。値はすべて `esc` でエスケープします。
 
