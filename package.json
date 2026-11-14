@@ -1,0 +1,28 @@
+{
+  "name": "g2-game-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ゲーム紹介サイトとゲームランチャー（Tauri）。データは別リポジトリから読み込む",
+  "scripts": {
+    "dev": "astro dev --root site",
+    "build": "astro build --root site",
+    "preview": "astro preview --root site",
+    "launcher:web:dev": "astro dev --root launcher --port 4322",
+    "launcher:web:build": "astro build --root launcher",
+    "launcher": "tauri dev",
+    "launcher:build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4",
+    "astro": "7.4.5",
+    "marked": "18.1.2",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  },
+  "engines": {
+    "node": ">=26.13.0"
+  }
+}

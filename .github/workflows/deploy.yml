@@ -1,0 +1,64 @@
+# v から始まるタグ（例: v0.1.0）の push と手動実行で、サイトをビルドして GitHub Pages に公開する。
+# データリポジトリの更新時は、データリポジトリ側の notify-hub.yml が GitHub App 経由で手動実行（workflow_dispatch）を起動する。
+# データリポジトリは非公開のため、その読み取り専用の Deploy key（秘密鍵）を Secrets の CONTENT_DEPLOY_KEY に、
+# リポジトリ名（owner/name）を Variables の CONTENT_REPOSITORY に登録しておく。
+# フォークからのPRでは実行しない（Secrets を渡さないため pull_request_target は使わない）。
+name: Deploy site
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: データリポジトリを取得
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.CONTENT_REPOSITORY }}
+          ssh-key: ${{ secrets.CONTENT_DEPLOY_KEY }}
+          path: content
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+
+      - name: ビルド
+        run: npm run build
+        env:
+          CONTENT_DIR: content
+          GITHUB_PAGES: 'true'
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

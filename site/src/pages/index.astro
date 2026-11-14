@@ -1,0 +1,8 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { renderHomePage } from '../../../core/render';
+import { content, ctx } from '../content';
+---
+<Layout>
+  <Fragment set:html={renderHomePage(content, ctx)} />
+</Layout>

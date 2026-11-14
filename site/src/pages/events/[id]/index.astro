@@ -1,0 +1,15 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { renderEventPage } from '../../../../../core/render';
+import type { GameEvent } from '../../../../../core/content';
+import { content, ctx } from '../../../content';
+
+export function getStaticPaths() {
+  return content.events.map((event) => ({ params: { id: event.id }, props: { event } }));
+}
+
+const { event } = Astro.props as { event: GameEvent };
+---
+<Layout title={`${event.name} | ${content.site.name}`} description={event.summary}>
+  <Fragment set:html={renderEventPage(content, event, ctx)} />
+</Layout>

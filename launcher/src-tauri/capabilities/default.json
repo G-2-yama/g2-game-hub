@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "ランチャーのメイン画面だけにイベントの受信を許可する",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

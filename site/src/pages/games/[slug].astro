@@ -1,0 +1,15 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { renderGamePage } from '../../../../core/render';
+import type { Game } from '../../../../core/content';
+import { content, ctx } from '../../content';
+
+export function getStaticPaths() {
+  return content.games.map((game) => ({ params: { slug: game.slug }, props: { game } }));
+}
+
+const { game } = Astro.props as { game: Game };
+---
+<Layout title={`${game.title} | ${content.site.name}`} description={game.summary}>
+  <Fragment set:html={renderGamePage(game, ctx)} />
+</Layout>

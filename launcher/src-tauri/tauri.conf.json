@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "G2 Game Launcher",
+  "version": "../../package.json",
+  "identifier": "jp.g2.game-launcher",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:4322",
+    "beforeDevCommand": { "script": "npm run launcher:web:dev", "cwd": "../.." },
+    "beforeBuildCommand": { "script": "npm run launcher:web:build", "cwd": "../.." }
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' content: http://content.localhost https: data:; frame-src https://www.youtube-nocookie.com; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+  }
+}
