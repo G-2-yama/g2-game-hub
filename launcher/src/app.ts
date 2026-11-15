@@ -34,6 +34,7 @@ const footer = document.getElementById('footer')!;
 let settings: Settings | null = null;
 let content: Content | null = null;
 let syncError: string | null = null;
+let loadedJson = '';
 const progressHandlers = new Set<(id: string, message: string) => void>();
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -51,12 +52,16 @@ function statusText({ state, installedVersion, latestVersion }: GameStatus) {
 const needsDownload = (status: GameStatus) => status.state === 'missing' || status.state === 'outdated';
 const getStatus = (id: string) => invoke<GameStatus>('status', { id });
 
-/** 本体からデータを受け取る。sync なら先にデータリポジトリから最新を取得する（失敗時は前回の取得分）。 */
+/** 本体からデータを受け取る。sync なら先にデータリポジトリから最新を取得する（失敗時は前回の取得分）。内容が変わったら true。 */
 async function loadContent(sync: boolean) {
-  const loaded = await invoke<Loaded>('load_content', { sync });
-  syncError = loaded.syncError ?? null;
-  content = parseContent(loaded);
-  for (const error of content.errors) console.warn(error);
+  const { syncError: error, ...raw } = await invoke<Loaded>('load_content', { sync });
+  syncError = error ?? null;
+  const json = JSON.stringify(raw);
+  if (content && json === loadedJson) return false;
+  loadedJson = json;
+  content = parseContent(raw);
+  for (const message of content.errors) console.warn(message);
+  return true;
 }
 
 /** ランチャーで表示するイベント。未選択（すべてのゲーム）なら undefined。 */
@@ -281,7 +286,7 @@ function renderSettings() {
   const select = main.querySelector<HTMLSelectElement>('#event')!;
   const connect = main.querySelector<HTMLButtonElement>('[data-action="connect"]')!;
   const cacheList = main.querySelector<HTMLElement>('[data-list="cache"]')!;
-  select.value = settings?.event ?? content?.events[0]?.id ?? '';
+  select.value = settings?.event ?? '';
 
   const onConnect = async () => {
     connect.disabled = true;
@@ -317,8 +322,10 @@ function renderSettings() {
 
   main.querySelector('[data-action="save"]')!.addEventListener('click', async () => {
     await invoke('select_event', { event: select.value || null });
-    location.hash = '#/';
-    await start();
+    if (settings) settings.event = select.value || null;
+    renderChrome();
+    if (location.hash === '#/') render();
+    else location.hash = '#/';
   });
 
   const titleOf = (id: string) => (content && findGame(content, id)?.title) || id;
@@ -462,14 +469,22 @@ function render() {
 async function start() {
   settings = await invoke<Settings | null>('get_settings');
   if (!settings) return renderSettings();
+  // 前回取得したデータですぐに表示し、最新の取得は裏で行って変わっていれば描き直す。
+  const cached = await loadContent(false).then(() => true, () => false);
+  if (cached) {
+    renderChrome();
+    render();
+  }
   try {
-    await loadContent(true);
+    const changed = await loadContent(true);
+    if (!changed && cached) return;
   } catch (error) {
-    main.innerHTML = `<p class="section container">データを読み込めません: ${esc(errorText(error))}</p>`;
+    if (!cached) main.innerHTML = `<p class="section container">データを読み込めません: ${esc(errorText(error))}</p>`;
     return;
   }
   renderChrome();
-  render();
+  // 設定画面は入力中の内容を消さないよう描き直さない。
+  if (!cached || !location.hash.startsWith('#/settings')) render();
 }
 
 // 外部リンクは既定のブラウザで開く。

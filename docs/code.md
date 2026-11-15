@@ -4,7 +4,7 @@ title: コードの構造
 description: ファイルの役割、core の関数、Rust のコマンド、開発の手順と変更の約束。
 tags: [code, development]
 status: draft
-generated: { by: claude-code/claude-opus-5-5, at: 2026-11-15T23:00:00+09:00 }
+generated: { by: claude-code/claude-opus-5-5, at: 2026-11-15T23:30:00+09:00 }
 ---
 
 # コードの構造
@@ -56,6 +56,8 @@ URL の作り方はサイトとランチャーで異なるため、`RenderContex
 ## ランチャー
 
 画面（`app.ts`）の画面遷移：`#/`、`#/games/<slug>`、`#/events/<id>`、`#/events/<id>/games/<slug>`、`#/downloads`、`#/settings`。
+
+起動時は `load_content(false)`（前回の分）ですぐ描画し、続けて `load_content(true)` で最新を取得して、内容が変わったときだけ描き直す（設定画面は入力を消さないよう描き直さない）。イベントの選択は再取得せずに描き直す。
 
 本体（`lib.rs`）のコマンド：
 
