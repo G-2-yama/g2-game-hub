@@ -27,5 +27,9 @@ const { title = site.name, description = site.intro } = Astro.props;
     <Fragment set:html={renderHeader(site, ctx, '', content.events)} />
     <main id="main"><slot /></main>
     <Fragment set:html={renderFooter(site)} />
+    <script>
+      import { enableYoutubeFacade } from '../../../core/youtube';
+      enableYoutubeFacade();
+    </script>
   </body>
 </html>

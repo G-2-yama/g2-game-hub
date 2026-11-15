@@ -129,7 +129,7 @@ export function renderGamePage(game: Game, ctx: RenderContext, { event, asideTop
   const back = event ? ctx.event(event.id) : ctx.home();
 
   const media = youtubeId
-    ? `<iframe src="https://www.youtube-nocookie.com/embed/${esc(youtubeId)}" title="${esc(title)}の動画" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`
+    ? `<button type="button" class="video-facade" data-youtube-id="${esc(youtubeId)}" aria-label="${esc(title)}の動画を再生"><img src="${esc(cover ? imageUrl(ctx, slug, cover) : `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`)}" alt="" /><span class="video-facade__play" aria-hidden="true"></span></button>`
     : cover ? `<img src="${esc(imageUrl(ctx, slug, cover))}" alt="${esc(title)}のキービジュアル" />` : `<span aria-hidden="true">${esc(title)}</span>`;
 
   const row = (label: string, value: string | undefined, className = '') =>

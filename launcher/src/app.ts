@@ -6,8 +6,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { eventGames, findEvent, findGame, parseContent, type Content, type GameEvent, type RawContent } from '../../core/content';
 import { esc, renderEventPage, renderFooter, renderGamePage, renderHeader, renderHomePage, type RenderContext } from '../../core/render';
+import { enableYoutubeFacade } from '../../core/youtube';
 
-interface Settings { repo: string; event?: string | null; hasToken: boolean }
+interface Settings { repo?: string | null; event?: string | null; hasToken: boolean; hasPassword: boolean; unlocked: boolean }
 interface Loaded extends RawContent { syncError?: string | null }
 interface GameStatus {
   state: 'none' | 'web' | 'missing' | 'outdated' | 'installed';
@@ -222,6 +223,7 @@ function renderSettings() {
     header.innerHTML = '';
     footer.innerHTML = '';
   }
+  if (settings && !settings.unlocked) return renderUnlock();
   const eventOptions = () => '<option value="">すべてのゲーム</option>'
     + (content?.events ?? []).map((event) => `<option value="${esc(event.id)}">${esc(event.name)}</option>`).join('');
   main.innerHTML = `<div class="section container launcher-setup">
@@ -255,6 +257,19 @@ function renderSettings() {
       <button type="button" class="btn btn--text" data-action="open-dir">フォルダを開く</button>
     </div>
     <p class="launcher-play__status" role="status" data-status="cache"></p>
+  </section>
+  <section aria-labelledby="password-heading" data-section="password" ${settings ? '' : 'hidden'}>
+    <h2 id="password-heading">設定画面のパスワード</h2>
+    <p>設定すると、この画面を開くときにパスワードが必要になります（PCを貸し出すときに）。現在: ${settings?.hasPassword ? '設定済み' : '未設定'}</p>
+    <label for="new-password">新しいパスワード</label>
+    <input id="new-password" type="password" autocomplete="new-password" />
+    <label for="new-password-confirm">新しいパスワード（確認）</label>
+    <input id="new-password-confirm" type="password" autocomplete="new-password" />
+    <div class="launcher-play__actions">
+      <button type="button" class="btn btn--filled" data-action="set-password">パスワードを設定</button>
+      ${settings?.hasPassword ? '<button type="button" class="btn btn--tonal" data-action="clear-password">パスワードを解除</button>' : ''}
+    </div>
+    <p class="launcher-play__status" role="status" data-status="password"></p>
   </section>
 </div>`;
 
@@ -346,6 +361,65 @@ function renderSettings() {
   });
   main.querySelector('[data-action="open-dir"]')!.addEventListener('click', () => invoke('open_data_dir'));
   if (settings) refreshCache();
+
+  const passwordStatus = main.querySelector('[data-status="password"]')!;
+  const savePassword = async (password: string, done: string) => {
+    try {
+      await invoke('set_password', { password });
+      settings = await invoke<Settings | null>('get_settings');
+      renderSettings();
+      main.querySelector('[data-status="password"]')!.textContent = done;
+    } catch (error) {
+      passwordStatus.textContent = `変更できません: ${errorText(error)}`;
+    }
+  };
+  main.querySelector('[data-action="set-password"]')!.addEventListener('click', () => {
+    const password = main.querySelector<HTMLInputElement>('#new-password')!.value;
+    const confirmation = main.querySelector<HTMLInputElement>('#new-password-confirm')!.value;
+    if (!password) passwordStatus.textContent = 'パスワードを入力してください。';
+    else if (password !== confirmation) passwordStatus.textContent = '確認用のパスワードが一致しません。';
+    else savePassword(password, 'パスワードを設定しました。設定画面を離れると施錠されます。');
+  });
+  main.querySelector('[data-action="clear-password"]')?.addEventListener('click', () => {
+    if (confirm('設定画面のパスワードを解除します。よろしいですか？')) savePassword('', 'パスワードを解除しました。');
+  });
+}
+
+/** 設定画面のパスワードの入力欄。正しければ設定画面を表示する。 */
+function renderUnlock() {
+  main.innerHTML = `<div class="section container launcher-setup">
+  <h1 class="headline">ランチャーの設定</h1>
+  <section aria-labelledby="unlock-heading">
+    <h2 id="unlock-heading">パスワード</h2>
+    <p>設定画面を開くにはパスワードを入力してください。</p>
+    <label for="unlock-password">パスワード</label>
+    <input id="unlock-password" type="password" autocomplete="off" />
+    <div class="launcher-play__actions">
+      <button type="button" class="btn btn--filled" data-action="unlock">開く</button>
+      ${content ? '<a class="btn btn--text" href="#/">戻る</a>' : ''}
+    </div>
+    <p class="launcher-play__status" role="status"></p>
+  </section>
+</div>`;
+  const input = main.querySelector<HTMLInputElement>('#unlock-password')!;
+  const button = main.querySelector<HTMLButtonElement>('[data-action="unlock"]')!;
+  const status = main.querySelector('.launcher-play__status')!;
+  const onUnlock = async () => {
+    button.disabled = true;
+    try {
+      await invoke('unlock', { password: input.value });
+      settings = await invoke<Settings | null>('get_settings');
+      renderSettings();
+    } catch (error) {
+      status.textContent = errorText(error);
+      input.value = '';
+      button.disabled = false;
+      input.focus();
+    }
+  };
+  button.addEventListener('click', onUnlock);
+  input.addEventListener('keydown', (event) => { if (event.key === 'Enter') onUnlock(); });
+  input.focus();
 }
 
 /** 現在のURL（#/...）に応じて画面を描画する。 */
@@ -353,6 +427,12 @@ function render() {
   const [path, anchor] = location.hash.slice(1).split('#');
   const parts = (path || '/').split('/').filter(Boolean);
   if (parts[0] === 'settings' || !settings || !content) return renderSettings();
+  // 設定画面を離れたら施錠する。
+  if (settings.hasPassword && settings.unlocked) {
+    settings.unlocked = false;
+    settings.repo = null;
+    invoke('lock');
+  }
   progressHandlers.clear();
   let gameId: string | undefined;
 
@@ -408,6 +488,7 @@ document.addEventListener('keydown', (event) => {
   }
 });
 window.addEventListener('hashchange', render);
+enableYoutubeFacade();
 listen<[string, string]>('launcher:progress', ({ payload: [id, message] }) => {
   for (const handler of progressHandlers) handler(id, message);
 });

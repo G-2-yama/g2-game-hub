@@ -32,6 +32,8 @@ struct AppState {
     running: Mutex<HashSet<String>>,
     /// 同じゲームの取得が重複しないよう、ゲームごとに取得を直列にする。
     installing: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// 設定画面のパスワードで解錠済みか（パスワード未設定なら常に解錠扱い）。
+    unlocked: Mutex<bool>,
 }
 
 // ---------- 設定 ----------
@@ -41,6 +43,9 @@ struct AppState {
 struct Settings {
     repo: String,
     event: Option<String>,
+    /// 設定画面のパスワード（"salt$hash"）。未設定なら None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    password: Option<String>,
 }
 
 /// ゲームやキャッシュを1フォルダにまとめ、このフォルダを消せば元に戻せるようにする。
@@ -89,6 +94,78 @@ fn safe_segment(value: &str) -> bool {
 fn valid_repo(repo: &str) -> bool {
     let parts: Vec<&str> = repo.split('/').collect();
     parts.len() == 2 && parts.iter().all(|part| safe_segment(part))
+}
+
+// ---------- 設定画面のパスワード ----------
+// 貸し出すPCで、来場者が設定画面からリポジトリ名やトークンの操作にたどり着けないようにする。
+
+fn hash_password(salt: &str, password: &str) -> String {
+    let mut digest = Sha256::digest(format!("{salt}${password}").as_bytes());
+    for _ in 0..100_000 {
+        digest = Sha256::digest(digest);
+    }
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn new_password(password: &str) -> String {
+    let seed = format!("{:?}{}", std::time::SystemTime::now(), std::process::id());
+    let salt: String = Sha256::digest(seed.as_bytes()).iter().take(16).map(|b| format!("{b:02x}")).collect();
+    format!("{salt}${}", hash_password(&salt, password))
+}
+
+fn verify_password(stored: &str, password: &str) -> bool {
+    stored.split_once('$').is_some_and(|(salt, hash)| hash_password(salt, password) == hash)
+}
+
+fn has_password(app: &AppHandle) -> bool {
+    read_settings(app).is_some_and(|s| s.password.is_some())
+}
+
+fn is_unlocked(app: &AppHandle, state: &AppState) -> bool {
+    !has_password(app) || *state.unlocked.lock().unwrap()
+}
+
+fn ensure_unlocked(app: &AppHandle, state: &AppState) -> CmdResult<()> {
+    if is_unlocked(app, state) {
+        Ok(())
+    } else {
+        Err("設定画面のパスワードを入力してください".into())
+    }
+}
+
+#[tauri::command]
+async fn unlock(app: AppHandle, state: State<'_, AppState>, password: String) -> CmdResult<()> {
+    let stored = read_settings(&app).and_then(|s| s.password);
+    let ok = tauri::async_runtime::spawn_blocking(move || stored.is_none_or(|s| verify_password(&s, &password)))
+        .await
+        .map_err(msg)?;
+    if !ok {
+        // 総当たりを遅らせる。
+        tauri::async_runtime::spawn_blocking(|| std::thread::sleep(Duration::from_secs(1))).await.map_err(msg)?;
+        return Err("パスワードが違います".into());
+    }
+    *state.unlocked.lock().unwrap() = true;
+    Ok(())
+}
+
+#[tauri::command]
+fn lock(state: State<'_, AppState>) {
+    *state.unlocked.lock().unwrap() = false;
+}
+
+/// 設定画面のパスワードを設定する。空なら解除する。
+#[tauri::command]
+async fn set_password(app: AppHandle, state: State<'_, AppState>, password: String) -> CmdResult<()> {
+    ensure_unlocked(&app, &state)?;
+    let mut settings = read_settings(&app).ok_or("まだ設定されていません")?;
+    settings.password = if password.is_empty() {
+        None
+    } else {
+        Some(tauri::async_runtime::spawn_blocking(move || new_password(&password)).await.map_err(msg)?)
+    };
+    write_settings(&app, &settings)?;
+    *state.unlocked.lock().unwrap() = settings.password.is_some();
+    Ok(())
 }
 
 // ---------- GitHub ----------
@@ -180,24 +257,35 @@ fn read_content(dir: &Path) -> Loaded {
 }
 
 /// 画面に返す設定。トークンそのものは返さず、保存済みかどうかだけを返す。
+/// パスワードで施錠中はリポジトリ名も返さない。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsView {
-    repo: String,
+    repo: Option<String>,
     event: Option<String>,
     has_token: bool,
+    has_password: bool,
+    unlocked: bool,
 }
 
 #[tauri::command]
-fn get_settings(app: AppHandle) -> Option<SettingsView> {
-    let settings = read_settings(&app)?;
+async fn get_settings(app: AppHandle, state: State<'_, AppState>) -> CmdResult<Option<SettingsView>> {
+    let Some(settings) = read_settings(&app) else { return Ok(None) };
     let has_token = read_token(&settings.repo).is_ok();
-    Some(SettingsView { repo: settings.repo, event: settings.event, has_token })
+    let unlocked = is_unlocked(&app, &state);
+    Ok(Some(SettingsView {
+        repo: unlocked.then_some(settings.repo),
+        event: settings.event,
+        has_token,
+        has_password: settings.password.is_some(),
+        unlocked,
+    }))
 }
 
 /// 保存済みのトークンを資格情報ストアから削除する（イベント終了時など）。
 #[tauri::command]
-fn delete_token(app: AppHandle) -> CmdResult<()> {
+fn delete_token(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    ensure_unlocked(&app, &state)?;
     let settings = read_settings(&app).ok_or("まだ設定されていません")?;
     match token_entry(&settings.repo)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -209,6 +297,7 @@ fn delete_token(app: AppHandle) -> CmdResult<()> {
 /// 同じリポジトリでトークンを空欄にした場合は、保存済みのトークンを使う。
 #[tauri::command]
 async fn connect(app: AppHandle, state: State<'_, AppState>, repo: String, token: String) -> CmdResult<()> {
+    ensure_unlocked(&app, &state)?;
     if !valid_repo(&repo) {
         return Err("データリポジトリは owner/name の形式で入力してください".into());
     }
@@ -216,12 +305,15 @@ async fn connect(app: AppHandle, state: State<'_, AppState>, repo: String, token
     sync_content(&app, &state, &repo, &token).await?;
     sync_releases(&app, &state, &repo, &token).await?;
     token_entry(&repo)?.set_password(&token).map_err(msg)?;
-    let event = read_settings(&app).filter(|s| s.repo == repo).and_then(|s| s.event);
-    write_settings(&app, &Settings { repo, event })
+    let previous = read_settings(&app);
+    let password = previous.as_ref().and_then(|s| s.password.clone());
+    let event = previous.filter(|s| s.repo == repo).and_then(|s| s.event);
+    write_settings(&app, &Settings { repo, event, password })
 }
 
 #[tauri::command]
-fn select_event(app: AppHandle, event: Option<String>) -> CmdResult<()> {
+fn select_event(app: AppHandle, state: State<'_, AppState>, event: Option<String>) -> CmdResult<()> {
+    ensure_unlocked(&app, &state)?;
     let mut settings = read_settings(&app).ok_or("まだ設定されていません")?;
     settings.event = event;
     write_settings(&app, &settings)
@@ -614,6 +706,7 @@ fn installed_games(app: AppHandle) -> CmdResult<Vec<InstalledGame>> {
 /// 取得済みのゲームを削除する。起動中・取得中のゲームは削除しない。
 #[tauri::command]
 async fn remove_game(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    ensure_unlocked(&app, &state)?;
     if !safe_segment(&id) {
         return Err("ゲームの指定が正しくありません".into());
     }
@@ -635,7 +728,8 @@ async fn remove_game(app: AppHandle, state: State<'_, AppState>, id: String) -> 
 
 /// ゲームやデータのキャッシュを置いているフォルダを開く。
 #[tauri::command]
-fn open_data_dir(app: AppHandle) -> CmdResult<()> {
+fn open_data_dir(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    ensure_unlocked(&app, &state)?;
     let root = data_root(&app)?;
     fs::create_dir_all(&root).map_err(msg)?;
     app.opener().open_path(root.to_string_lossy(), None::<&str>).map_err(msg)
@@ -712,6 +806,7 @@ pub fn run() {
         client: reqwest::Client::builder().user_agent("g2-game-launcher").build().expect("HTTPクライアントを作成できません"),
         running: Mutex::default(),
         installing: Mutex::default(),
+        unlocked: Mutex::default(),
     };
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -719,6 +814,9 @@ pub fn run() {
         .register_uri_scheme_protocol("content", |ctx, request| serve_content(ctx.app_handle(), request.uri().path()))
         .invoke_handler(tauri::generate_handler![
             get_settings,
+            unlock,
+            lock,
+            set_password,
             delete_token,
             connect,
             select_event,
