@@ -4,7 +4,7 @@ title: ランチャーの使い方
 description: 試遊PCでの設定と操作、データの保存場所、トラブル時の確認点。
 tags: [launcher, windows]
 status: draft
-generated: { by: claude-code/claude-opus-5-5, at: 2026-11-14T10:30:00+09:00 }
+generated: { by: claude-code/claude-opus-5-5, at: 2026-11-14T18:00:00+09:00 }
 ---
 
 # ランチャーの使い方
@@ -36,6 +36,7 @@ generated: { by: claude-code/claude-opus-5-5, at: 2026-11-14T10:30:00+09:00 }
 ```text
 jp.g2.game-launcher\
 ├─ settings.json    接続先と選んだイベント（トークンは含まない）
+├─ releases.json    取得したReleaseの一覧（版の判断に使う）
 ├─ content\         取得したデータ（md・画像・distribution.json）
 └─ games\<slug>\    ダウンロードして展開したゲーム
 ```
@@ -48,6 +49,6 @@ jp.g2.game-launcher\
 |---|---|
 | 接続できない | PATの期限・対象リポジトリ・Organizationの承認 |
 | 「遊ぶ」が出ない | そのOSの配布情報が `distribution.json` にあるか |
-| ダウンロードが失敗する | Releaseが公開済みか、`asset` の名前、SHA-256 |
+| ダウンロードが失敗する | Release（既定は `playtest`）に `asset` の名前のzipがあるか。差し替え直後なら「最新の情報に更新」してから再度試す |
 | 起動しない | `exe` のパス（zip内の相対パス）。設定画面の「フォルダを開く」で中身を確認 |
 | 削除できない | ゲームを終了してから削除する |

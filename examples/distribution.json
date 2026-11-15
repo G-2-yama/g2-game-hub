@@ -1,8 +1,7 @@
 {
-  "version": "1.0.0",
+  "tag": "playtest",
   "windows": {
-    "asset": "musica-v1.0.0-windows.zip",
-    "sha256": "zipファイルのSHA-256（任意だが推奨）",
+    "asset": "musica-windows.zip",
     "exe": "musica/musica.exe",
     "args": []
   }

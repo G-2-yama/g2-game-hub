@@ -18,6 +18,8 @@ use tauri_plugin_opener::OpenerExt;
 /// トークンを保存する資格情報ストア（Windows の資格情報マネージャー、macOS のキーチェーン等）のサービス名。
 const KEYRING_SERVICE: &str = "jp.g2.game-launcher";
 const API: &str = "https://api.github.com";
+/// distribution.json で tag を省略したときの Release のタグ。
+const DEFAULT_TAG: &str = "playtest";
 
 type CmdResult<T> = Result<T, String>;
 
@@ -133,6 +135,22 @@ async fn sync_content(app: &AppHandle, state: &AppState, repo: &str, token: &str
     .map_err(msg)?
 }
 
+/// データリポジトリの Release 一覧を取得し、releases.json に保存する。取得できなければ前回の分を使う。
+async fn sync_releases(app: &AppHandle, state: &AppState, repo: &str, token: &str) -> CmdResult<()> {
+    let url = format!("{API}/repos/{repo}/releases?per_page=100");
+    let releases: Vec<serde_json::Value> =
+        send(github(&state.client, &url, token, "application/vnd.github+json")).await?.json().await.map_err(msg)?;
+    fs::write(data_root(app)?.join("releases.json"), serde_json::to_string(&releases).map_err(msg)?).map_err(msg)
+}
+
+/// 保存済みの Release 一覧から、タグとファイル名で添付ファイルを探す。
+fn cached_asset(app: &AppHandle, tag: &str, name: &str) -> Option<serde_json::Value> {
+    let text = fs::read_to_string(data_root(app).ok()?.join("releases.json")).ok()?;
+    let releases: Vec<serde_json::Value> = serde_json::from_str(&text).ok()?;
+    let release = releases.into_iter().find(|r| r["tag_name"] == tag)?;
+    release["assets"].as_array()?.iter().find(|a| a["name"] == name).cloned()
+}
+
 /// 画面に渡すデータ（core/content.ts の RawContent）。distribution.json は渡さない。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -196,6 +214,7 @@ async fn connect(app: AppHandle, state: State<'_, AppState>, repo: String, token
     }
     let token = if token.is_empty() { read_token(&repo)? } else { token };
     sync_content(&app, &state, &repo, &token).await?;
+    sync_releases(&app, &state, &repo, &token).await?;
     token_entry(&repo)?.set_password(&token).map_err(msg)?;
     let event = read_settings(&app).filter(|s| s.repo == repo).and_then(|s| s.event);
     write_settings(&app, &Settings { repo, event })
@@ -216,7 +235,8 @@ async fn load_content(app: AppHandle, state: State<'_, AppState>, sync: bool) ->
     if sync {
         let result = async {
             let token = read_token(&settings.repo)?;
-            sync_content(&app, &state, &settings.repo, &token).await
+            sync_content(&app, &state, &settings.repo, &token).await?;
+            sync_releases(&app, &state, &settings.repo, &token).await
         }
         .await;
         sync_error = result.err();
@@ -244,6 +264,8 @@ struct Distribution {
 }
 
 /// OSごとの配布物。Release の添付ファイル名（asset）か、直接ダウンロードできる https の url を書く。
+/// asset の版は添付ファイルの更新日時で判断し、破損は GitHub が返す SHA-256（digest）で検出する。
+/// url の場合は distribution.json の version で版を判断し、sha256 があれば検証する。
 #[derive(Deserialize, Clone)]
 struct Build {
     asset: Option<String>,
@@ -280,14 +302,21 @@ fn get_game(app: &AppHandle, id: &str) -> CmdResult<Option<Game>> {
         d.linux
     };
     let Some(build) = build else { return Ok(None) };
-    let version = d
-        .version
-        .filter(|v| safe_segment(v))
-        .ok_or_else(|| invalid("version がない、または使えない文字が含まれています"))?;
-    if build.asset.is_none() && !build.url.as_deref().is_some_and(|u| u.starts_with("https://")) {
-        return Err(invalid("asset か https の url を指定してください"));
+    let tag = d.tag.unwrap_or_else(|| DEFAULT_TAG.to_string());
+    let version = match &build.asset {
+        Some(asset) => {
+            let found = cached_asset(app, &tag, asset)
+                .ok_or_else(|| invalid(&format!("Release「{tag}」に「{asset}」がありません（最新の情報に更新してください）")))?;
+            // 例: 2026-11-14T01:30:00Z → 2026.11.14-013000
+            let updated = found["updated_at"].as_str().unwrap_or_default();
+            updated.replacen('-', ".", 2).replace('T', "-").replace([':', 'Z'], "")
+        }
+        None if build.url.as_deref().is_some_and(|u| u.starts_with("https://")) => d.version.unwrap_or_default(),
+        None => return Err(invalid("asset か https の url を指定してください")),
+    };
+    if !safe_segment(&version) {
+        return Err(invalid("version がない、または使えない文字が含まれています（url の場合は version が必要です）"));
     }
-    let tag = d.tag.unwrap_or_else(|| format!("{id}-v{version}"));
     Ok(Some(Game::Zip { version, tag, build }))
 }
 
@@ -337,6 +366,7 @@ fn progress(app: &AppHandle, id: &str, message: &str) {
 
 async fn download_zip(app: &AppHandle, state: &AppState, id: &str, tag: &str, build: &Build, zip_path: &Path) -> CmdResult<()> {
     progress(app, id, "ダウンロード中…");
+    let mut expected = build.sha256.clone();
     let mut res = match &build.asset {
         Some(asset) => {
             let repo = read_settings(app).ok_or("まだ設定されていません")?.repo;
@@ -344,12 +374,14 @@ async fn download_zip(app: &AppHandle, state: &AppState, id: &str, tag: &str, bu
             let release_url = format!("{API}/repos/{repo}/releases/tags/{tag}");
             let release: serde_json::Value =
                 send(github(&state.client, &release_url, &token, "application/vnd.github+json")).await?.json().await.map_err(msg)?;
-            let url = release["assets"]
+            let found = release["assets"]
                 .as_array()
                 .and_then(|assets| assets.iter().find(|a| a["name"] == asset.as_str()))
-                .and_then(|a| a["url"].as_str())
-                .ok_or_else(|| format!("Release「{tag}」に「{asset}」がありません"))?
-                .to_string();
+                .ok_or_else(|| format!("Release「{tag}」に「{asset}」がありません"))?;
+            let url = found["url"].as_str().unwrap_or_default().to_string();
+            if let Some(digest) = found["digest"].as_str().and_then(|d| d.strip_prefix("sha256:")) {
+                expected = Some(digest.to_string());
+            }
             // トークンは api.github.com にだけ送られ、実体へのリダイレクト先には送られない。
             send(github(&state.client, &url, &token, "application/octet-stream")).await?
         }
@@ -376,10 +408,10 @@ async fn download_zip(app: &AppHandle, state: &AppState, id: &str, tag: &str, bu
         }
     }
     drop(file);
-    if let Some(expected) = &build.sha256 {
+    if let Some(expected) = &expected {
         let actual: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
         if !actual.eq_ignore_ascii_case(expected.trim()) {
-            return Err("ファイルのハッシュが distribution.json の sha256 と一致しません".into());
+            return Err("ファイルのハッシュが一致しません（ダウンロードが壊れたか、配布中に差し替えられた可能性があります）".into());
         }
     }
     Ok(())

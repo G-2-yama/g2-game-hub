@@ -4,7 +4,7 @@ title: 仕組み
 description: サイトとランチャーの構成、データの流れ、認証の考え方。
 tags: [architecture, auth]
 status: draft
-generated: { by: claude-code/claude-opus-5-5, at: 2026-11-14T10:30:00+09:00 }
+generated: { by: claude-code/claude-opus-5-5, at: 2026-11-14T18:00:00+09:00 }
 ---
 
 # 仕組み
@@ -52,9 +52,9 @@ hubのワークフローは **タグ `v*` と手動実行（とdataからの起�
 
 ## ランチャーの動き
 
-1. 起動時に、dataのzipball（リポジトリ全体）をPATで取得し、ローカルに展開してキャッシュする。取得できなければ前回の分で動く。
+1. 起動時に、dataのzipball（リポジトリ全体）とReleaseの一覧をPATで取得し、ローカルにキャッシュする。取得できなければ前回の分で動く。
 2. `core/` で読み込み・検証し、選んだイベントのゲームを表示する。
-3. 「遊ぶ」で `distribution.json` を読み、Releaseのzipをダウンロード → SHA-256を検証 → 展開 → 起動する。版が変われば古い版を削除する。
+3. 「遊ぶ」で `distribution.json` を読み、Releaseのzipをダウンロード → GitHubが返すSHA-256（`digest`）で検証 → 展開 → 起動する。zipの更新日時が変われば新しい版として取り直し、古い版を削除する。
 4. `"type": "web"` のゲームはダウンロードせずにブラウザで開く。
 
 ## 安全のための制限
