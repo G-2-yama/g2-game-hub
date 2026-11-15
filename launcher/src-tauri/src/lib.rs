@@ -191,25 +191,66 @@ async fn send(request: reqwest::RequestBuilder) -> CmdResult<reqwest::Response> 
 
 // ---------- データ ----------
 
-/// データリポジトリの既定ブランチを取得し、content/ を置き換える。
+/// データリポジトリの既定ブランチを取得し、content/ に反映する。
+/// 変わったファイルだけ書き換え、なくなったファイルだけ消す。一括の削除・置き換えは
+/// ウイルス対策ソフトにランサムウェアと誤検出され、途中で止められると content/ が欠けるため。
 async fn sync_content(app: &AppHandle, state: &AppState, repo: &str, token: &str) -> CmdResult<()> {
     let request = github(&state.client, &format!("{API}/repos/{repo}/zipball"), token, "application/vnd.github+json")
         .timeout(Duration::from_secs(60));
     let bytes = send(request).await?.bytes().await.map_err(msg)?;
     let root = data_root(app)?;
     tauri::async_runtime::spawn_blocking(move || -> CmdResult<()> {
-        let tmp = root.join("content.new");
-        let _ = fs::remove_dir_all(&tmp);
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(msg)?;
-        archive
-            .extract_unwrapped_root_dir(&tmp, zip::read::root_dir_common_filter)
-            .map_err(msg)?;
+        // 以前の版が残した作業用ディレクトリ。
+        let _ = fs::remove_dir_all(root.join("content.new"));
         let dir = root.join("content");
-        let _ = fs::remove_dir_all(&dir);
-        fs::rename(&tmp, &dir).map_err(msg)
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(msg)?;
+        let mut keep = HashSet::new();
+        for i in 0..archive.len() {
+            let mut entry = archive.by_index(i).map_err(msg)?;
+            // zipball は「owner-repo-sha/」の下に全体が入っているので、先頭のディレクトリを除く。
+            let Some(path) = entry.enclosed_name() else { continue };
+            let rel: PathBuf = path.components().skip(1).collect();
+            if rel.as_os_str().is_empty() {
+                continue;
+            }
+            let target = dir.join(&rel);
+            keep.insert(rel);
+            if entry.is_dir() {
+                fs::create_dir_all(&target).map_err(msg)?;
+                continue;
+            }
+            let mut data = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut data).map_err(msg)?;
+            if fs::read(&target).ok().as_deref() == Some(data.as_slice()) {
+                continue;
+            }
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).map_err(msg)?;
+            }
+            fs::write(&target, &data).map_err(msg)?;
+        }
+        remove_stale(&dir, &dir, &keep)
     })
     .await
     .map_err(msg)?
+}
+
+/// root 以下で keep（root からの相対パス）にないファイル・ディレクトリを消す。
+fn remove_stale(root: &Path, dir: &Path, keep: &HashSet<PathBuf>) -> CmdResult<()> {
+    for entry in fs::read_dir(dir).map_err(msg)? {
+        let path = entry.map_err(msg)?.path();
+        let rel = path.strip_prefix(root).map_err(msg)?;
+        if keep.contains(rel) {
+            if path.is_dir() {
+                remove_stale(root, &path, keep)?;
+            }
+        } else if path.is_dir() {
+            fs::remove_dir_all(&path).map_err(msg)?;
+        } else {
+            fs::remove_file(&path).map_err(msg)?;
+        }
+    }
+    Ok(())
 }
 
 /// データリポジトリの Release 一覧を取得し、releases.json に保存する。取得できなければ前回の分を使う。

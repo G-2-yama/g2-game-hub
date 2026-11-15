@@ -4,7 +4,7 @@ title: コードの構造
 description: ファイルの役割、core の関数、Rust のコマンド、開発の手順と変更の約束。
 tags: [code, development]
 status: draft
-generated: { by: claude-code/claude-opus-5-5, at: 2026-11-15T16:30:00+09:00 }
+generated: { by: claude-code/claude-opus-5-5, at: 2026-11-15T23:00:00+09:00 }
 ---
 
 # コードの構造
@@ -63,7 +63,7 @@ URL の作り方はサイトとランチャーで異なるため、`RenderContex
 |---|---|
 | `get_settings` / `connect` / `select_event` / `delete_token` | 設定とトークン（トークンは keyring に保存） |
 | `unlock` / `lock` / `set_password` | 設定画面のパスワード（ハッシュを settings.json に保存）。施錠中は設定を変えるコマンドを拒否し、リポジトリ名を返さない |
-| `load_content` | dataのzipballを取得して展開し、読み込む（失敗時は前回の分） |
+| `load_content` | dataのzipballを取得し、変わったファイルだけ書き換えて読み込む（失敗時は前回の分）。一括の削除・置き換えはウイルス対策ソフトに誤検出されるため行わない |
 | `status` / `download` / `download_all` | ゲームの取得状況と取得（SHA-256検証・展開・旧版の削除） |
 | `play` | 起動（未取得なら取得してから） |
 | `installed_games` / `remove_game` / `open_data_dir` | キャッシュの管理（起動中・取得中は削除しない） |
