@@ -88,6 +88,7 @@ npm run launcher:build   # インストーラーを作成
 ## 変更するときの約束
 
 - 見た目は `core/` で変える。サイトとランチャーに複製しない。
+- 見た目は Material 3 に従う。色・影（elevation）・動きは `core/styles.css` の `--md-*` のトークンを使い、ボタンは `.btn`（filled・tonal・text）、入力欄は Outlined text field の形にする。UIライブラリは追加しない。
 - データの形式を変えたら、`core/content.ts` とdataの `docs/` を合わせて直す。
 - 依存はバージョンを固定し、`package-lock.json`・`Cargo.lock` をレビューしてコミットする。npm はライフサイクルスクリプトを無効にしてインストールする。
 - このリポジトリは公開なので、data のリポジトリ名・トークン・非公開のゲーム情報を書かない。
