@@ -1,6 +1,6 @@
 {
   "name": "g2-game-hub",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "description": "ゲーム紹介サイトとゲームランチャー（Tauri）。データは別リポジトリから読み込む",

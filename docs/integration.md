@@ -4,7 +4,7 @@ title: リポジトリの連携とCI
 description: hub と data の連携、各ワークフローの動き、そのための鍵・トークン・設定の一覧と導入記録。
 tags: [ci, github-actions, github-app, deploy-key, security]
 status: draft
-generated: { by: claude-code/claude-opus-5-5, at: 2026-11-14T12:00:00+09:00 }
+generated: { by: claude-code/claude-opus-5-5, at: 2026-11-15T12:00:00+09:00 }
 ---
 
 # リポジトリの連携とCI
@@ -82,8 +82,8 @@ sequenceDiagram
   participant H as g2-game-hub
   participant R as Release launcher
   participant S as Deploy site
-  U->>H: version を上げて push、タグ v0.x.y を push
-  H->>R: 起動（タグと version の一致を確認）
+  U->>H: タグ v0.x.y を push
+  H->>R: 起動（タグから版を設定）
   R->>H: インストーラーを Release に添付
   H->>S: 起動（サイトも再公開）
 ```

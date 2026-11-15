@@ -4,7 +4,7 @@ title: 運用
 description: 初期設定、イベントの準備と後片付け、ランチャーのリリース、鍵とトークンの管理。
 tags: [operations, release, security]
 status: draft
-generated: { by: claude-code/claude-opus-5-5, at: 2026-11-14T12:00:00+09:00 }
+generated: { by: claude-code/claude-opus-5-5, at: 2026-11-15T12:00:00+09:00 }
 ---
 
 # 運用
@@ -69,8 +69,10 @@ Organization の `Settings > Personal access tokens`：Fine-grained は承認制
 
 データの更新ではリリースは不要です。ランチャーのコードを変えたときだけ行います。
 
-1. `package.json` の `version` を上げてコミットし、pushする。
-2. 同じ版のタグを付ける：`git tag v0.2.0 && git push origin v0.2.0`
+1. 変更をコミットし、pushする。
+2. 版のタグを付ける：`git tag v0.2.0 && git push origin v0.2.0`
+   - 版はタグだけで決まり、CIがビルド前に `package.json` へ設定する。`package.json` と `Cargo.toml` の `0.0.0` は手元でのビルド用の仮の値なので、書き換えない。
+   - タグを間違えたら消して付け直す：`git push origin :refs/tags/<タグ> && git tag -d <タグ>`
 3. Actions がWindows用インストーラー（NSIS）を作り、hubのReleaseに添付する。サイトも再公開される。
 
 インストーラーは Windows の「アプリ」に登録され、`winget list` にも表示されます（wingetのリポジトリには登録していないので `winget install` はできません）。署名していないため、初回はSmartScreenの警告が出ます。

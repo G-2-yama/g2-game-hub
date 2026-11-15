@@ -1305,7 +1305,7 @@ dependencies = [
 
 [[package]]
 name = "g2-game-launcher"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "keyring",
  "reqwest",
